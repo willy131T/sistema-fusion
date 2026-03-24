@@ -1,7 +1,7 @@
 let usuarioLogueado = null; 
 let esModoEdicion = false;
 let carrito = [];
-const URL_API = "http://localhost:3000";
+const URL_API = "";
 
 // ==========================================
 // 1. SISTEMA DE LOGIN (Con tecla Enter)
