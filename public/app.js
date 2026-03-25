@@ -382,7 +382,7 @@ function cobrarTicket() {
     // Usamos el código del cliente que realmente inició sesión
     // app.js - Dentro de cobrarTicket()
 // Intentamos usar cod_client, si no existe usamos id_usuario, y si no, por defecto 1
-const clienteActual = usuarioLogueado.cod_client || usuarioLogueado.id_usuario || 1;
+const clienteActual = usuarioLogueado.cod_client || usuarioLogueado.id_usuario;
 
     fetch(`${URL_API}/ventas`, {
         method: "POST",
