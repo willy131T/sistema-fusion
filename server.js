@@ -68,11 +68,13 @@ app.post("/login", (req, res) => {
                 return res.json({ success: false, mensaje: "Seleccionaste 'Administrador' pero no tienes permisos." });
             }
 
-            res.json({ 
-                success: true, 
-                rol: usuario.rol, 
-                id_usuario: usuario.id_usuario 
-            });
+            // server.js - Bloque corregido
+res.json({ 
+    success: true, 
+    rol: usuario.rol, 
+    id_usuario: usuario.id_usuario,
+    cod_client: usuario.cod_client // <--- AGREGA ESTA LÍNEA AQUÍ
+});
         } else {
             res.json({ success: false, mensaje: "Usuario o contraseña incorrectos" });
         }
