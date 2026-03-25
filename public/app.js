@@ -376,16 +376,20 @@ function cobrarTicket() {
     }
 
     const cambio = pago - total;
-    const quierePDF = document.getElementById("check-imprimir").checked; // Revisamos la casilla
+    const quierePDF = document.getElementById("check-imprimir").checked; 
     
+    // --- AQUÍ ESTÁ EL CAMBIO ---
+    // Usamos el código del cliente que realmente inició sesión
+    const clienteActual = usuarioLogueado ? usuarioLogueado.cod_client : 1; 
+
     fetch(`${URL_API}/ventas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-            cod_client: 1, 
+            cod_client: clienteActual, // <--- ANTES DECÍA "1" FIJO, AHORA ES VARIABLE
             total: total,
-            pago: pago,       // Enviamos el pago
-            cambio: cambio,   // Enviamos el cambio
+            pago: pago,
+            cambio: cambio,
             carrito: carrito 
         })
     })
@@ -394,14 +398,13 @@ function cobrarTicket() {
         if(data.success) {
             alert(`✅ Venta registrada con éxito.\nSu cambio es: $${cambio.toFixed(2)}`);
             
-            // Solo abrimos el PDF si el usuario dejó la casilla marcada
             if (quierePDF) {
                 window.open(`${URL_API}/ticket/${data.id_ticket}/pdf`, '_blank');
             }
 
             limpiarCarrito();
-            document.getElementById("input-pago").value = ""; // Limpiamos la caja de pago
-            cargarProductosPOS(); // Actualizamos el stock visual
+            document.getElementById("input-pago").value = ""; 
+            cargarProductosPOS(); 
         }
     })
     .catch(err => console.error("Error al cobrar:", err));
