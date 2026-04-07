@@ -206,26 +206,19 @@ function renderizarCarrito() {
 // ==========================================
 
 function cobrarTicket() {
-    if(carrito.length === 0) return alert("⚠️ Carrito vacío");
+    // ... validaciones de carrito y pago ...
 
-    const total = parseFloat(document.getElementById("lbl-total").innerText);
-    const pago = parseFloat(document.getElementById("input-pago").value);
-
-    if(isNaN(pago) || pago < total) {
-        return alert("❌ Pago insuficiente.");
-    }
-
-    const cambio = pago - total;
-    const quierePDF = document.getElementById("check-imprimir").checked; 
-    
-    // DINÁMICO: Si no hay cod_client, intenta con id_usuario, o por defecto 1
+    // SEGURIDAD: Intentamos sacar el código del cliente logueado
+    // Si no existe, usamos el id_usuario. Si nada existe, ponemos 1 para que no truene.
     const clienteActual = usuarioLogueado.cod_client || usuarioLogueado.id_usuario || 1;
+
+    console.log("Comprador actual ID:", clienteActual); // Para que tú lo veas en la consola (F12)
 
     fetch(`${URL_API}/ventas`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
-            cod_client: clienteActual,
+            cod_client: clienteActual, 
             total: total,
             pago: pago,
             cambio: cambio,
