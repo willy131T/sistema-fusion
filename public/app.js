@@ -210,7 +210,8 @@ function cobrarTicket() {
 
     // SEGURIDAD: Intentamos sacar el código del cliente logueado
     // Si no existe, usamos el id_usuario. Si nada existe, ponemos 1 para que no truene.
-    const clienteActual = usuarioLogueado.cod_client || usuarioLogueado.id_usuario || 1;
+    // Si no hay cod_client (como en el caso del admin), usamos el 1 por defecto
+const clienteActual = usuarioLogueado.cod_client || 1;
 
     console.log("Comprador actual ID:", clienteActual); // Para que tú lo veas en la consola (F12)
 
