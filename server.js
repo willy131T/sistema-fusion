@@ -118,42 +118,35 @@ app.get("/proveedores", (req, res) => {
 // 3. PROCESO DE VENTAS (POS)
 // ==========================================
 
+// En server.js
 app.post("/ventas", (req, res) => {
     const { cod_client, total, pago, cambio, carrito } = req.body;
 
-    // 1. La consulta SQL incluyendo la columna 'fecha' con NOW()
+    // 1. Insertamos el Ticket mencionando las columnas exactas de tu BD
     const sqlTicket = "INSERT INTO tickets (cod_client, fecha, total, pago, cambio) VALUES (?, NOW(), ?, ?, ?)";
     
-    // 2. El array de datos debe coincidir con el orden de los '?' de arriba
-    // Fíjate: cod_client (?), total (?), pago (?), cambio (?)
-    const datosTicket = [cod_client, total, pago, cambio];
-
-    conexion.query(sqlTicket, datosTicket, (err, resultTicket) => {
-        if(err) {
-            console.error("ERROR EN BD:", err);
-            return res.status(500).json({ success: false, error: "Error en base de datos: " + err.sqlMessage });
+    conexion.query(sqlTicket, [cod_client, total, pago, cambio], (err, resultTicket) => {
+        if (err) {
+            console.error("ERROR BD TICKET:", err.sqlMessage);
+            return res.status(500).json({ success: false, error: err.sqlMessage });
         }
 
-        const id_ticket = resultTicket.insertId; 
-        
-        // 3. Insertar los productos en la tabla 'productos_clientes'
-        // Según tu imagen, esa tabla debe tener: codigo, cod_client, id_ticket, cantidad
-        const detalles = carrito.map(item => [item.codigo, cod_client, id_ticket, item.cantidad]);
-        const sqlDetalles = "INSERT INTO productos_clientes (codigo, cod_client, id_ticket, cantidad) VALUES ?";
-        
-        conexion.query(sqlDetalles, [detalles], (err) => {
-             if(err) {
-                 console.error("Error en detalles:", err);
-                 return res.status(500).json({ success: false, error: "Error en detalles" });
-             }
-             
-             // 4. Descontar el stock
-             carrito.forEach(item => {
-                 conexion.query("UPDATE productos SET stock = stock - ? WHERE codigo = ?", [item.cantidad, item.codigo]);
-             });
+        const id_ticket = resultTicket.insertId;
 
-             res.json({ success: true, id_ticket: id_ticket, mensaje: "Venta registrada con éxito" });
+        // 2. Insertamos los detalles (productos)
+        // Usamos un bucle para asegurar que cada producto se inserte correctamente
+        const sqlDetalles = "INSERT INTO productos_clientes (codigo, cod_client, id_ticket, cantidad) VALUES (?, ?, ?, ?)";
+        
+        carrito.forEach(item => {
+            conexion.query(sqlDetalles, [item.codigo, cod_client, id_ticket, item.cantidad], (errDet) => {
+                if(!errDet) {
+                    // 3. Descontamos stock
+                    conexion.query("UPDATE productos SET stock = stock - ? WHERE codigo = ?", [item.cantidad, item.codigo]);
+                }
+            });
         });
+
+        res.json({ success: true, id_ticket: id_ticket });
     });
 });
 
