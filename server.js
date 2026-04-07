@@ -5,13 +5,13 @@ const PDFDocument = require("pdfkit");
 
 const app = express();
 
-// Configuración de Middleware
+// Middlewares
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public")); 
 
 // ==========================================
-// CONEXIÓN A LA BASE DE DATOS (Clever Cloud)
+// CONEXIÓN A LA BD EN LA NUBE (Clever Cloud)
 // ==========================================
 const conexion = mysql.createConnection({
   host: "bbdvoph2lhsyq0fdj6vj-mysql.services.clever-cloud.com",
@@ -23,16 +23,17 @@ const conexion = mysql.createConnection({
 
 conexion.connect(function(err){
   if(err) {
-    console.log("Error de conexión:", err);
+    console.error("Error de conexión:", err);
   } else {
     console.log("¡Conectado a la BD de Clever Cloud exitosamente!");
   }
 });
 
 // ==========================================
-// 1. SISTEMA DE USUARIOS Y ACCESO
+// 1. SISTEMA DE LOGIN Y REGISTRO
 // ==========================================
 
+// Login con validación de roles y envío de cod_client
 app.post("/login", (req, res) => {
     const { username, password, tipo_rol } = req.body; 
     
@@ -43,19 +44,19 @@ app.post("/login", (req, res) => {
         if(result.length > 0) {
             const usuario = result[0];
 
-            // Validación de roles
             if (tipo_rol === 'cliente' && usuario.rol !== 'cliente') {
-                return res.json({ success: false, mensaje: "Seleccionaste 'Cliente' pero tu cuenta es de Admin." });
+                return res.json({ success: false, mensaje: "Seleccionaste 'Cliente' pero tu cuenta es de Administrador." });
             }
             if (tipo_rol === 'admin' && (usuario.rol !== 'admin' && usuario.rol !== 'superadmin')) {
-                return res.json({ success: false, mensaje: "Seleccionaste 'Admin' pero no tienes permisos." });
+                return res.json({ success: false, mensaje: "Seleccionaste 'Administrador' pero no tienes permisos." });
             }
 
+            // CORRECCIÓN VITAL: Enviamos el cod_client al frontend
             res.json({ 
                 success: true, 
                 rol: usuario.rol, 
                 id_usuario: usuario.id_usuario,
-                cod_client: usuario.cod_client // Enviamos el código para el POS
+                cod_client: usuario.cod_client 
             });
         } else {
             res.json({ success: false, mensaje: "Usuario o contraseña incorrectos" });
@@ -63,6 +64,7 @@ app.post("/login", (req, res) => {
     });
 });
 
+// Registro de Clientes Nuevos
 app.post("/registro-cliente", (req, res) => {
     const { username, password, nombre, apellido, rfc, direccion, fca_nac } = req.body;
 
@@ -75,10 +77,10 @@ app.post("/registro-cliente", (req, res) => {
             const cod_client = rows[0].nextId;
             
             const sqlCliente = "INSERT INTO clientes (cod_client, nombre, apellido, rfc, direccion, fca_nac, id_usuario) VALUES (?, ?, ?, ?, ?, ?, ?)";
-            conexion.query(sqlCliente, [cod_client, nombre, apellido, rfc, direccion, fca_nac, id_usuario], (err, result) => {
+            conexion.query(sqlCliente, [cod_client, nombre, apellido, rfc, direccion, fca_nac, id_usuario], (err) => {
                 if(err) return res.status(500).json({ success: false, error: "Error al guardar datos." });
                 
-                // IMPORTANTE: Actualizamos la tabla usuarios con su nuevo cod_client
+                // CORRECCIÓN VITAL: Vinculamos el cod_client a la tabla usuarios
                 conexion.query("UPDATE usuarios SET cod_client = ? WHERE id_usuario = ?", [cod_client, id_usuario]);
                 
                 res.json({ success: true, mensaje: "¡Registro exitoso! Ya puedes iniciar sesión." });
@@ -87,66 +89,132 @@ app.post("/registro-cliente", (req, res) => {
     });
 });
 
+app.post("/crear-admin", (req, res) => {
+    const { username, password } = req.body;
+    conexion.query("INSERT INTO usuarios (username, password, rol) VALUES (?, ?, 'admin')", [username, password], (err) => {
+        if(err) return res.status(500).json({ success: false, error: "El usuario ya existe." });
+        res.json({ success: true, mensaje: "Nuevo administrador creado con éxito." });
+    });
+});
+
 // ==========================================
-// 2. MANTENIMIENTO (PRODUCTOS Y PROVEEDORES)
+// 2. CRUD DE ADMINISTRADORES (SUPERADMIN)
 // ==========================================
+
+app.get("/usuarios-admin", (req, res) => {
+    conexion.query("SELECT id_usuario, username, rol FROM usuarios WHERE rol IN ('admin', 'superadmin')", (err, result) => {
+        if(err) return res.status(500).json({ error: "Error al obtener usuarios" });
+        res.json(result);
+    });
+});
+
+app.put("/usuarios-admin/:id", (req, res) => {
+    const id = req.params.id;
+    const { username, password } = req.body;
+    
+    let sql = "UPDATE usuarios SET username = ? WHERE id_usuario = ?";
+    let params = [username, id];
+
+    if (password && password.trim() !== "") {
+        sql = "UPDATE usuarios SET username = ?, password = ? WHERE id_usuario = ?";
+        params = [username, password, id];
+    }
+
+    conexion.query(sql, params, (err) => {
+        if(err) return res.status(500).json({ success: false, error: "Error al actualizar." });
+        res.json({ success: true, mensaje: "¡Administrador actualizado correctamente!" });
+    });
+});
+
+app.delete("/usuarios-admin/:id", (req, res) => {
+    const id = req.params.id;
+    conexion.query("DELETE FROM usuarios WHERE id_usuario = ? AND rol != 'superadmin'", [id], (err) => {
+        if(err) return res.status(500).json({ success: false, error: "Error al eliminar." });
+        res.json({ success: true, mensaje: "Administrador eliminado del sistema." });
+    });
+});
+
+// ==========================================
+// 3. CRUD DE INVENTARIO (ADMIN)
+// ==========================================
+
+app.get("/proveedores", (req, res) => {
+    conexion.query("SELECT * FROM proveedores", (err, result) => {
+        if(err) return res.status(500).json(err);
+        res.json(result);
+    });
+});
+
+app.post("/proveedores", (req, res) => {
+    const { nif, nombre, direccion } = req.body;
+    conexion.query("INSERT INTO proveedores (nif, nombre, direccion) VALUES (?, ?, ?)", [nif, nombre, direccion], (err) => {
+        if(err) return res.status(500).json({ success: false, error: "El NIF ya existe o hubo un error." });
+        res.json({ success: true, mensaje: "¡Proveedor registrado con éxito!" });
+    });
+});
 
 app.get("/productos", (req, res) => {
   conexion.query("SELECT * FROM productos", (err, result) => {
-    if(err) return res.status(500).send(err);
+    if(err) return res.status(500).json(err);
     res.json(result);
   });
 });
 
 app.post("/productos", (req, res) => {
   const { codigo, nombre, precio, stock, nif } = req.body;
-  const sql = "INSERT INTO productos (codigo, nombre, precio, stock, nif) VALUES (?, ?, ?, ?, ?)";
-  conexion.query(sql, [codigo, nombre, precio, stock, nif], (err) => {
+  conexion.query("INSERT INTO productos (codigo, nombre, precio, stock, nif) VALUES (?, ?, ?, ?, ?)", [codigo, nombre, precio, stock, nif], (err) => {
     if(err) res.status(500).send("Error al guardar");
-    else res.send("¡Producto registrado!");
+    else res.send("¡Producto registrado con éxito!");
   });
 });
 
-app.get("/proveedores", (req, res) => {
-    conexion.query("SELECT * FROM proveedores", (err, result) => {
-        if(err) throw err;
-        res.json(result);
+app.put("/productos/:codigoViejo", (req, res) => {
+    const codigoViejo = req.params.codigoViejo;
+    const { codigo, nombre, precio, stock, nif } = req.body;
+    conexion.query("UPDATE productos SET codigo = ?, nombre = ?, precio = ?, stock = ?, nif = ? WHERE codigo = ?", [codigo, nombre, precio, stock, nif, codigoViejo], (err) => {
+      if(err) res.status(500).send("Error al actualizar");
+      else res.send("¡Producto actualizado!");
+    });
+});
+
+app.delete("/productos/:codigo", (req, res) => {
+    const codigo = req.params.codigo;
+    conexion.query("DELETE FROM productos WHERE codigo = ?", [codigo], (err) => {
+      if(err) res.status(500).send("Error al eliminar");
+      else res.send("¡Producto eliminado!");
     });
 });
 
 // ==========================================
-// 3. PROCESO DE VENTAS (POS)
+// 4. PUNTO DE VENTA Y VENTAS (CLIENTES)
 // ==========================================
 
-// En server.js
 app.post("/ventas", (req, res) => {
     const { cod_client, total, pago, cambio, carrito } = req.body;
 
-    // 1. Insertamos el Ticket mencionando las columnas exactas de tu BD
+    // 1. Insertar el Ticket
     const sqlTicket = "INSERT INTO tickets (cod_client, fecha, total, pago, cambio) VALUES (?, NOW(), ?, ?, ?)";
     
     conexion.query(sqlTicket, [cod_client, total, pago, cambio], (err, resultTicket) => {
         if (err) {
-            console.error("ERROR BD TICKET:", err.sqlMessage);
-            return res.status(500).json({ success: false, error: err.sqlMessage });
+            console.error("Error al crear ticket:", err.sqlMessage);
+            return res.status(500).json({ success: false, error: "Error BD: " + err.sqlMessage });
         }
 
         const id_ticket = resultTicket.insertId;
-
-        // 2. Insertamos los detalles (productos)
-        // Usamos un bucle para asegurar que cada producto se inserte correctamente
         const sqlDetalles = "INSERT INTO productos_clientes (codigo, cod_client, id_ticket, cantidad) VALUES (?, ?, ?, ?)";
         
+        // 2. Insertar Detalles uno por uno (Más robusto)
         carrito.forEach(item => {
             conexion.query(sqlDetalles, [item.codigo, cod_client, id_ticket, item.cantidad], (errDet) => {
                 if(!errDet) {
-                    // 3. Descontamos stock
+                    // 3. Descontar Stock
                     conexion.query("UPDATE productos SET stock = stock - ? WHERE codigo = ?", [item.cantidad, item.codigo]);
                 }
             });
         });
 
-        res.json({ success: true, id_ticket: id_ticket });
+        res.json({ success: true, id_ticket: id_ticket, mensaje: "Venta registrada" });
     });
 });
 
@@ -155,7 +223,8 @@ app.get("/historial-ventas", (req, res) => {
         SELECT t.id_ticket, t.fecha, t.total, t.pago, t.cambio, c.nombre, c.apellido
         FROM tickets t
         JOIN clientes c ON t.cod_client = c.cod_client
-        ORDER BY t.fecha DESC`;
+        ORDER BY t.fecha DESC
+    `;
     conexion.query(sql, (err, result) => {
         if(err) return res.status(500).json({ error: "Error al obtener historial" });
         res.json(result);
@@ -163,54 +232,62 @@ app.get("/historial-ventas", (req, res) => {
 });
 
 // ==========================================
-// 4. GENERADOR DE TICKETS PDF
+// 5. GENERADOR DE PDF
 // ==========================================
 
 app.get("/ticket/:id/pdf", (req, res) => {
     const id_ticket = req.params.id;
+
     const sql = `
         SELECT t.id_ticket, t.fecha, t.total, t.pago, t.cambio, p.nombre, p.precio, pc.cantidad, c.nombre as cliente
         FROM tickets t
         JOIN productos_clientes pc ON t.id_ticket = pc.id_ticket
         JOIN productos p ON pc.codigo = p.codigo
         JOIN clientes c ON t.cod_client = c.cod_client
-        WHERE t.id_ticket = ?`;
+        WHERE t.id_ticket = ?
+    `;
 
     conexion.query(sql, [id_ticket], (err, resultados) => {
         if (err || resultados.length === 0) return res.status(404).send("Ticket no encontrado");
 
         const doc = new PDFDocument({ margin: 30, size: [250, 450] }); 
+        
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename=ticket_${id_ticket}.pdf`);
+        res.setHeader('Content-Disposition', `inline; filename=ticket_venta_${id_ticket}.pdf`); // Inline para que abra en el navegador
         doc.pipe(res);
 
-        doc.fontSize(14).font('Helvetica-Bold').text('FUSION FERRETERÍA', { align: 'center' });
-        doc.fontSize(10).font('Helvetica').text('Ticket de Venta', { align: 'center' }).moveDown();
+        doc.fontSize(14).font('Helvetica-Bold').text('SISTEMA CORPORATIVO FUSIÓN', { align: 'center' });
+        doc.fontSize(10).font('Helvetica').text('Ticket de Compra', { align: 'center' }).moveDown();
+        doc.text('-----------------------------------------', { align: 'center' });
         doc.text(`Folio: #00${resultados[0].id_ticket}`);
         doc.text(`Cliente: ${resultados[0].cliente}`);
         doc.text(`Fecha: ${new Date(resultados[0].fecha).toLocaleString()}`);
-        doc.text('-----------------------------------------', { align: 'center' });
+        doc.text('-----------------------------------------', { align: 'center' }).moveDown();
 
         resultados.forEach(item => {
             const subtotal = item.cantidad * item.precio;
             doc.text(`${item.cantidad}x ${item.nombre}`);
             doc.text(`$${item.precio.toFixed(2)} c/u  ->  $${subtotal.toFixed(2)}`, { align: 'right' });
+            doc.moveDown(0.5);
         });
 
-        doc.text('-----------------------------------------', { align: 'center' });
-        doc.fontSize(11).font('Helvetica-Bold').text(`TOTAL: $${resultados[0].total.toFixed(2)}`, { align: 'right' });
-        doc.fontSize(10).font('Helvetica').text(`Pago: $${resultados[0].pago.toFixed(2)}`, { align: 'right' });
+        doc.text('-----------------------------------------', { align: 'center' }).moveDown();
+        doc.fontSize(12).font('Helvetica-Bold').text(`TOTAL: $${resultados[0].total.toFixed(2)}`, { align: 'right' });
+        
+        doc.fontSize(10).font('Helvetica').text(`Su pago: $${resultados[0].pago.toFixed(2)}`, { align: 'right' });
         doc.text(`Cambio: $${resultados[0].cambio.toFixed(2)}`, { align: 'right' });
         
-        doc.moveDown().fontSize(9).font('Helvetica').text('¡Gracias por su preferencia!', { align: 'center' });
+        doc.moveDown(2);
+        doc.fontSize(9).font('Helvetica').text('¡Gracias por su compra!', { align: 'center' });
+
         doc.end();
     });
 });
 
 // ==========================================
-// 5. INICIO DEL SERVIDOR
+// 6. INICIO DEL SERVIDOR
 // ==========================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor activo en puerto ${PORT}`);
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
